@@ -18,3 +18,8 @@ tqdm==4.67.1
 requests==2.32.5
 matplotlib==3.10.8
 
+# Веб-сервер
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-multipart==0.0.12
+

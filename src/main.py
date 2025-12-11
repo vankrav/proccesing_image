@@ -5,7 +5,7 @@ import types
 
 import cv2
 import numpy as np
-from rembg import remove
+from rembg import remove, new_session
 from PIL import Image
 
 
@@ -15,9 +15,19 @@ def load_image(path: str) -> Image.Image:
     return img
 
 
-def strip_background(portrait: Image.Image) -> Image.Image:
-    """Удаляет фон портрета с помощью rembg."""
-    return remove(portrait)
+def strip_background(portrait: Image.Image, model_name: str = "isnet-general-use") -> Image.Image:
+    """
+    Удаляет фон портрета с помощью rembg.
+    
+    Доступные модели:
+    - 'isnet-general-use' - ISNet (лучшая точность, рекомендуется для портретов)
+    - 'u2net_human_seg' - U2Net для людей (хорошо для портретов)
+    - 'u2net' - U2Net базовая (быстрая, универсальная)
+    - 'silueta' - Silueta (хорошая для общих случаев)
+    - 'u2netp' - U2Net легкая версия (быстрая)
+    """
+    session = new_session(model_name)
+    return remove(portrait, session=session)
 
 
 def refine_alpha(
@@ -120,8 +130,18 @@ def apply_color_reference(portrait_rgba: Image.Image, ref_image: Image.Image) ->
     return cv_to_pil(portrait_cv)
 
 
-def enhance_face_gfpgan(img_rgba: Image.Image, upscale: int = 1) -> Image.Image:
-    """Сглаживание/улучшение лица через GFPGAN (если установлен)."""
+def enhance_face_gfpgan(
+    img_rgba: Image.Image, upscale: int = 1, strength: float = 1.0, iterations: int = 1
+) -> Image.Image:
+    """
+    Сглаживание/улучшение лица через GFPGAN (если установлен).
+    
+    Args:
+        img_rgba: Входное изображение с альфа-каналом
+        upscale: Масштаб увеличения для обработки (1-4, рекомендуется 2-4)
+        strength: Интенсивность эффекта (0.0-1.0, где 1.0 = полный эффект)
+        iterations: Количество итераций улучшения (1-3, больше = сильнее эффект)
+    """
     # Шим: в новых torchvision модуль functional_tensor отсутствует, basicsr его ждет.
     try:
         import torchvision.transforms.functional_tensor as _  # type: ignore
@@ -142,6 +162,7 @@ def enhance_face_gfpgan(img_rgba: Image.Image, upscale: int = 1) -> Image.Image:
     cv_img = pil_to_cv(img_rgba)
     alpha = cv_img[:, :, 3]
     bgr = cv_img[:, :, :3]
+    original_bgr = bgr.copy()
 
     restorer = GFPGANer(
         model_path="https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth",
@@ -151,15 +172,26 @@ def enhance_face_gfpgan(img_rgba: Image.Image, upscale: int = 1) -> Image.Image:
         bg_upsampler=None,
     )
 
-    # Возвращает: cropped_faces, restored_faces, restored_img
-    _, _, restored_bgr = restorer.enhance(
-        bgr, has_aligned=False, only_center_face=False, paste_back=True
-    )
+    # Применяем улучшение несколько раз для более сильного эффекта
+    restored_bgr = bgr.copy()
+    for _ in range(iterations):
+        # Возвращает: cropped_faces, restored_faces, restored_img
+        _, _, restored_bgr = restorer.enhance(
+            restored_bgr, has_aligned=False, only_center_face=False, paste_back=True
+        )
+        
+        # GFPGAN может менять размер (upscale>1). Возвращаем к исходному.
+        if restored_bgr.shape[:2] != original_bgr.shape[:2]:
+            restored_bgr = cv2.resize(
+                restored_bgr,
+                (original_bgr.shape[1], original_bgr.shape[0]),
+                interpolation=cv2.INTER_LINEAR,
+            )
 
-    # GFPGAN может менять размер (upscale>1). Возвращаем к исходному.
-    if restored_bgr.shape[:2] != bgr.shape[:2]:
-        restored_bgr = cv2.resize(
-            restored_bgr, (bgr.shape[1], bgr.shape[0]), interpolation=cv2.INTER_LINEAR
+    # Смешиваем исходное и улучшенное изображение в зависимости от strength
+    if strength < 1.0:
+        restored_bgr = cv2.addWeighted(
+            original_bgr, 1.0 - strength, restored_bgr, strength, 0
         )
 
     cv_img[:, :, :3] = restored_bgr
@@ -173,21 +205,29 @@ def process(
     output_path: str,
     use_face_enhance: bool = False,
     face_upscale: int = 1,
+    face_strength: float = 1.0,
+    face_iterations: int = 1,
     background_path: str | None = None,
     alpha_erode: int = 0,
     alpha_dilate: int = 0,
     alpha_feather: int = 0,
+    bg_model: str = "isnet-general-use",
 ) -> None:
     portrait = load_image(portrait_path)
     ref = load_image(ref_path)
 
-    portrait_no_bg = strip_background(portrait)
+    portrait_no_bg = strip_background(portrait, model_name=bg_model)
     portrait_no_bg = refine_alpha(
         portrait_no_bg, erode=alpha_erode, dilate=alpha_dilate, feather=alpha_feather
     )
     colored = apply_color_reference(portrait_no_bg, ref)
     if use_face_enhance:
-        colored = enhance_face_gfpgan(colored, upscale=face_upscale)
+        colored = enhance_face_gfpgan(
+            colored,
+            upscale=face_upscale,
+            strength=face_strength,
+            iterations=face_iterations,
+        )
 
     if background_path:
         bg = Image.open(background_path).convert("RGBA")
@@ -218,8 +258,20 @@ def main() -> None:
     parser.add_argument(
         "--face-upscale",
         type=int,
+        default=2,
+        help="Масштаб увеличения для GFPGAN (1-4, рекомендуется 2-4, выше = лучше качество обработки)",
+    )
+    parser.add_argument(
+        "--face-strength",
+        type=float,
+        default=1.0,
+        help="Интенсивность улучшения лица (0.0-1.0, где 1.0 = полный эффект, по умолчанию 1.0)",
+    )
+    parser.add_argument(
+        "--face-iterations",
+        type=int,
         default=1,
-        help="Масштаб увеличения для GFPGAN (1-4, выше — чуть резче кожа)",
+        help="Количество итераций улучшения (1-3, больше = сильнее эффект, по умолчанию 1)",
     )
     parser.add_argument(
         "--background",
@@ -244,6 +296,13 @@ def main() -> None:
         help="Размытие края маски (Gaussian blur, пиксели) для мягкого перехода",
     )
     parser.add_argument(
+        "--bg-model",
+        type=str,
+        default="isnet-general-use",
+        choices=["isnet-general-use", "u2net_human_seg", "u2net", "silueta", "u2netp"],
+        help="Модель для удаления фона: isnet-general-use (лучшая, по умолчанию), u2net_human_seg (для людей), u2net (базовая), silueta, u2netp (легкая)",
+    )
+    parser.add_argument(
         "--preset",
         choices=["face3", "face8"],
         help="Предустановки: face3 (upscale=3, фон bg.jpg), face8 (upscale=8, фон bg.jpg)",
@@ -252,13 +311,29 @@ def main() -> None:
 
     # Пресеты: переопределяют ключевые опции, можно дополнительно менять руками.
     if args.preset:
+        # Проверяем наличие bg.jpg в src/ или в корне
+        bg_path = "src/bg.jpg" if os.path.exists("src/bg.jpg") else "bg.jpg"
         preset_map = {
-            "face3": {"face_enhance": True, "face_upscale": 3, "background": "bg.jpg"},
-            "face8": {"face_enhance": True, "face_upscale": 8, "background": "bg.jpg"},
+            "face3": {
+                "face_enhance": True,
+                "face_upscale": 3,
+                "face_strength": 1.0,
+                "face_iterations": 1,
+                "background": bg_path,
+            },
+            "face8": {
+                "face_enhance": True,
+                "face_upscale": 4,
+                "face_strength": 1.0,
+                "face_iterations": 2,
+                "background": bg_path,
+            },
         }
         preset = preset_map[args.preset]
         args.face_enhance = preset["face_enhance"]
         args.face_upscale = preset["face_upscale"]
+        args.face_strength = preset["face_strength"]
+        args.face_iterations = preset["face_iterations"]
         if args.background is None:
             args.background = preset["background"]
 
@@ -268,7 +343,13 @@ def main() -> None:
         args.output,
         use_face_enhance=args.face_enhance,
         face_upscale=args.face_upscale,
+        face_strength=args.face_strength,
+        face_iterations=args.face_iterations,
         background_path=args.background,
+        alpha_erode=args.alpha_erode,
+        alpha_dilate=args.alpha_dilate,
+        alpha_feather=args.alpha_feather,
+        bg_model=args.bg_model,
     )
 
 
