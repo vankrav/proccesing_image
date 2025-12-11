@@ -11,7 +11,6 @@ proccesing_image/
 └── src/               # Исходный код
     ├── main.py        # Основной скрипт
     ├── requirements.txt
-    ├── README.md      # Подробная документация
     ├── image.jpg      # Пример входного изображения
     ├── ref.png        # Пример референса по цвету
     └── bg.jpg         # Пример фона
@@ -19,12 +18,34 @@ proccesing_image/
 
 ## Быстрый старт
 
-```bash
+### Windows (PowerShell)
+
+```powershell
 # 1. Создать виртуальное окружение
 python -m venv .venv
 
-# 2. Активировать (Windows)
-.venv\Scripts\activate
+# 2. Активировать (если возникает ошибка политики выполнения)
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.venv\Scripts\Activate.ps1
+
+# Альтернатива: использовать activate.bat (CMD)
+# .venv\Scripts\activate.bat
+
+# 3. Установить зависимости
+pip install -r src/requirements.txt
+
+# 4. Запустить обработку
+python src/main.py src/image.jpg src/ref.png -o result.png
+```
+
+### Linux/macOS
+
+```bash
+# 1. Создать виртуальное окружение
+python3 -m venv .venv
+
+# 2. Активировать
+source .venv/bin/activate
 
 # 3. Установить зависимости
 pip install -r src/requirements.txt
@@ -93,9 +114,21 @@ python src/main.py src/image.jpg src/ref.png -o result.png \
 - Зависимости из `src/requirements.txt`
 - При первом запуске автоматически скачаются модели u2net и GFPGAN (~330 МБ)
 
-## Подробная документация
+## Решение проблем
 
-См. [src/README.md](src/README.md) для детального описания всех функций и примеров.
+### Ошибка активации виртуального окружения в PowerShell
+
+Если при активации `.venv\Scripts\activate` возникает ошибка о политике выполнения скриптов:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.venv\Scripts\Activate.ps1
+```
+
+Или используйте `activate.bat` вместо PowerShell скрипта:
+```cmd
+.venv\Scripts\activate.bat
+```
 
 ## Лицензия
 
