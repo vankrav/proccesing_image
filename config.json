@@ -1,0 +1,19 @@
+{
+  "face_enhance": true,
+  "face_upscale": 4,
+  "face_strength": 0.9,
+  "face_iterations": 1,
+  "center_face": false,
+  "normalize_exposure": false,
+  "color_strength": 0.8,
+  "reduce_contrast": 0.7,
+  "brightness_adjust": 0.0,
+  "saturation_adjust": 0.1,
+  "sepia_strength": 0.0,
+  "keep_largest": true,
+  "alpha_erode": 3,
+  "alpha_dilate": 0,
+  "alpha_feather": 3,
+  "bg_model": "isnet-general-use",
+  "face_detect": true
+}

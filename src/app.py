@@ -50,51 +50,17 @@ app = FastAPI(title="Portrait Processing API", version="1.0.0")
 # Создаем папки для временных файлов и результатов
 UPLOAD_DIR = Path("uploads")
 RESULT_DIR = Path("results")
-CONFIG_FILE = Path("config.json")
+CURRENT_PORTRAIT_FILE = Path("current_portrait.png")
+CURRENT_REFERENCE_FILE = Path("current_reference.png")
+CURRENT_BACKGROUND_FILE = Path("current_background.png")
 UPLOAD_DIR.mkdir(exist_ok=True)
 RESULT_DIR.mkdir(exist_ok=True)
 
-
-def load_default_config() -> dict:
-    """Загружает настройки по умолчанию из конфигурационного файла."""
-    default_config = {
-        "face_enhance": True,
-        "face_upscale": 4,
-        "face_strength": 0.7,
-        "face_iterations": 2,
-        "center_face": False,
-        "normalize_exposure": False,
-        "color_strength": 1.0,
-        "reduce_contrast": 0.85,
-        "brightness_adjust": 0.0,
-        "saturation_adjust": 0.0,
-        "sepia_strength": 0.0,
-        "keep_largest": True,
-        "alpha_erode": 17,
-        "alpha_dilate": 0,
-        "alpha_feather": 16,
-        "bg_model": "u2net_human_seg",
-    }
-    
-    if CONFIG_FILE.exists():
-        try:
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                saved_config = json.load(f)
-                # Обновляем только те ключи, которые есть в сохраненном конфиге
-                default_config.update(saved_config)
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"⚠️ Ошибка загрузки конфига: {e}, используем настройки по умолчанию")
-    
-    return default_config
-
-
-def save_default_config(config: dict) -> None:
-    """Сохраняет настройки в конфигурационный файл."""
-    try:
-        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
-    except IOError as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка сохранения конфига: {e}")
+# Импортируем функции для работы с конфигом
+try:
+    from .config_manager import load_config, save_config as save_config_func
+except ImportError:
+    from config_manager import load_config, save_config as save_config_func
 
 
 def process_image_bytes(
@@ -459,6 +425,11 @@ async def root():
                     <div class="file-input-wrapper">
                         <input type="file" id="portrait" name="portrait" accept="image/*" required>
                     </div>
+                    <div style="margin-top: 10px;">
+                        <button type="button" class="preset-btn" onclick="loadCurrentPortrait()" style="background: #17a2b8; color: white; border: none; padding: 8px 16px; font-size: 0.9em;">
+                            📷 Загрузить последний портрет из API
+                        </button>
+                    </div>
                     <div class="preview" id="portraitPreview"></div>
                 </div>
 
@@ -467,6 +438,11 @@ async def root():
                     <div class="file-input-wrapper">
                         <input type="file" id="reference" name="reference" accept="image/*">
                     </div>
+                    <div style="margin-top: 10px;">
+                        <button type="button" class="preset-btn" onclick="loadCurrentReference()" style="background: #17a2b8; color: white; border: none; padding: 8px 16px; font-size: 0.9em;">
+                            🎨 Загрузить последний референс из API
+                        </button>
+                    </div>
                     <div class="preview" id="referencePreview"></div>
                 </div>
 
@@ -474,6 +450,11 @@ async def root():
                     <label>Фон <small style="color: #666;">(по умолчанию: src/bg.jpg)</small></label>
                     <div class="file-input-wrapper">
                         <input type="file" id="background" name="background" accept="image/*">
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <button type="button" class="preset-btn" onclick="loadCurrentBackground()" style="background: #17a2b8; color: white; border: none; padding: 8px 16px; font-size: 0.9em;">
+                            🖼️ Загрузить последний фон из API
+                        </button>
                     </div>
                     <div class="preview" id="backgroundPreview"></div>
                 </div>
@@ -762,9 +743,66 @@ async def root():
             }
         }
 
+        // Загрузка последних изображений из API
+        async function loadCurrentPortrait() {
+            try {
+                const response = await fetch('/api/current/portrait');
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const file = new File([blob], 'current_portrait.png', { type: 'image/png' });
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(file);
+                    document.getElementById('portrait').files = dataTransfer.files;
+                    previewImage(document.getElementById('portrait'), 'portraitPreview');
+                } else {
+                    alert('❌ Последний портрет не найден');
+                }
+            } catch (error) {
+                alert('❌ Ошибка загрузки портрета: ' + error.message);
+            }
+        }
+
+        async function loadCurrentReference() {
+            try {
+                const response = await fetch('/api/current/reference');
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const file = new File([blob], 'current_reference.png', { type: 'image/png' });
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(file);
+                    document.getElementById('reference').files = dataTransfer.files;
+                    previewImage(document.getElementById('reference'), 'referencePreview');
+                } else {
+                    alert('❌ Последний референс не найден');
+                }
+            } catch (error) {
+                alert('❌ Ошибка загрузки референса: ' + error.message);
+            }
+        }
+
+        async function loadCurrentBackground() {
+            try {
+                const response = await fetch('/api/current/background');
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const file = new File([blob], 'current_background.png', { type: 'image/png' });
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(file);
+                    document.getElementById('background').files = dataTransfer.files;
+                    previewImage(document.getElementById('background'), 'backgroundPreview');
+                } else {
+                    alert('❌ Последний фон не найден');
+                }
+            } catch (error) {
+                alert('❌ Ошибка загрузки фона: ' + error.message);
+            }
+        }
+
         // Автоматически загружаем настройки при загрузке страницы
         window.addEventListener('DOMContentLoaded', function() {
             loadConfig();
+            // Автоматически загружаем последний портрет, если есть
+            loadCurrentPortrait();
         });
 
         // Применение пресетов
@@ -897,9 +935,22 @@ async def process_image(
         # Читаем файлы
         portrait_bytes = await portrait.read()
         
+        # Сохраняем портрет в файл current_portrait.png для использования в веб-интерфейсе
+        try:
+            with open(CURRENT_PORTRAIT_FILE, "wb") as f:
+                f.write(portrait_bytes)
+        except Exception as e:
+            print(f"⚠️ Не удалось сохранить текущий портрет: {e}")
+        
         # Используем src/ref.png по умолчанию, если референс не загружен
         if reference and reference.filename:
             reference_bytes = await reference.read()
+            # Сохраняем референс в файл
+            try:
+                with open(CURRENT_REFERENCE_FILE, "wb") as f:
+                    f.write(reference_bytes)
+            except Exception as e:
+                print(f"⚠️ Не удалось сохранить текущий референс: {e}")
         else:
             # Пытаемся загрузить src/ref.png по умолчанию
             ref_path = Path("src/ref.png")
@@ -913,6 +964,12 @@ async def process_image(
         background_bytes = None
         if background and background.filename:
             background_bytes = await background.read()
+            # Сохраняем фон в файл
+            try:
+                with open(CURRENT_BACKGROUND_FILE, "wb") as f:
+                    f.write(background_bytes)
+            except Exception as e:
+                print(f"⚠️ Не удалось сохранить текущий фон: {e}")
         else:
             # Пытаемся загрузить src/bg.jpg по умолчанию
             bg_path = Path("src/bg.jpg")
@@ -968,15 +1025,51 @@ async def health():
     return {"status": "ok", "message": "API is running"}
 
 
+@app.get("/api/current/portrait")
+async def get_current_portrait():
+    """Получить последний загруженный портрет."""
+    if CURRENT_PORTRAIT_FILE.exists():
+        return FileResponse(
+            CURRENT_PORTRAIT_FILE,
+            media_type="image/png",
+            filename="current_portrait.png"
+        )
+    raise HTTPException(status_code=404, detail="Портрет не найден")
+
+
+@app.get("/api/current/reference")
+async def get_current_reference():
+    """Получить последний загруженный референс."""
+    if CURRENT_REFERENCE_FILE.exists():
+        return FileResponse(
+            CURRENT_REFERENCE_FILE,
+            media_type="image/png",
+            filename="current_reference.png"
+        )
+    raise HTTPException(status_code=404, detail="Референс не найден")
+
+
+@app.get("/api/current/background")
+async def get_current_background():
+    """Получить последний загруженный фон."""
+    if CURRENT_BACKGROUND_FILE.exists():
+        return FileResponse(
+            CURRENT_BACKGROUND_FILE,
+            media_type="image/png",
+            filename="current_background.png"
+        )
+    raise HTTPException(status_code=404, detail="Фон не найден")
+
+
 @app.get("/api/config")
 async def get_config():
     """Получить сохраненные настройки по умолчанию."""
-    config = load_default_config()
+    config = load_config()
     return JSONResponse(content=config)
 
 
 @app.post("/api/config")
-async def save_config(
+async def save_config_endpoint(
     face_enhance: bool = Form(True),
     face_upscale: int = Form(4),
     face_strength: float = Form(0.7),
@@ -995,6 +1088,7 @@ async def save_config(
     bg_model: str = Form("u2net_human_seg"),
 ):
     """Сохранить настройки в конфигурационный файл."""
+    # Собираем все параметры в словарь
     config = {
         "face_enhance": face_enhance,
         "face_upscale": face_upscale,
@@ -1012,9 +1106,17 @@ async def save_config(
         "alpha_dilate": alpha_dilate,
         "alpha_feather": alpha_feather,
         "bg_model": bg_model,
+        "face_detect": True,  # Добавляем face_detect, если его нет
     }
-    save_default_config(config)
-    return JSONResponse(content={"status": "ok", "message": "Настройки сохранены"})
+    try:
+        # Используем функцию из config_manager
+        save_config_func(config)
+        from config_manager import CONFIG_FILE
+        return JSONResponse(content={"status": "ok", "message": f"Настройки сохранены в {CONFIG_FILE.absolute()}"})
+    except IOError as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка сохранения конфига: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Неожиданная ошибка: {e}")
 
 
 if __name__ == "__main__":
