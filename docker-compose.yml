@@ -1,0 +1,36 @@
+services:
+  portrait-processing:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: portrait-processing-app
+    ports:
+      - "8000:8000"
+    volumes:
+      # Монтируем директорию с моделями для кэширования между перезапусками
+      - ./models:/app/models
+      # Монтируем директории для загрузок и результатов
+      - ./uploads:/app/uploads
+      - ./results:/app/results
+      # Монтируем конфиг для возможности изменения настроек
+      - ./config.json:/app/config.json
+      # Монтируем исходные файлы для доступа к ref.png и bg.jpg
+      - ./src:/app/src
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Раскомментируйте секцию ниже для поддержки GPU (требует nvidia-container-toolkit)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+

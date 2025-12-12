@@ -33,3 +33,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Docker
+models/
+uploads/
+results/
+*.log
+
