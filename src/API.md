@@ -6,6 +6,28 @@
 http://localhost:8000
 ```
 
+## Значения по умолчанию
+
+API использует следующие значения по умолчанию для всех параметров:
+
+| Параметр | Значение по умолчанию |
+|----------|----------------------|
+| `face_enhance` | `true` (включено) |
+| `face_upscale` | `4` |
+| `face_strength` | `0.7` |
+| `face_iterations` | `2` |
+| `alpha_erode` | `10` |
+| `alpha_dilate` | `0` |
+| `alpha_feather` | `10` |
+| `bg_model` | `u2net_human_seg` |
+| `keep_largest` | `true` |
+| `reference` | `src/ref.png` (если файл существует) |
+| `background` | `src/bg.jpg` (если файл существует) |
+
+**Важно:**
+- Референс (`reference`) и фон (`background`) опциональны - если не указаны, используются файлы по умолчанию
+- Итоговое изображение всегда имеет размер **720x1280 пикселей** с сохранением пропорций
+
 ## Endpoints
 
 ### 1. GET `/api/health`
@@ -84,23 +106,31 @@ Content-Disposition: form-data; name="alpha_feather"
 | Параметр | Тип | Обязательный | Описание |
 |----------|-----|--------------|----------|
 | `portrait` | File | ✅ Да | Исходное изображение портрета (JPG, PNG, WEBP) |
-| `reference` | File | ✅ Да | Референсное изображение для переноса цвета |
-| `background` | File | ❌ Нет | Фоновое изображение (будет подложено под результат) |
-| `face_enhance` | Boolean | ❌ Нет | Включить улучшение лица через GFPGAN (по умолчанию: `false`) |
-| `face_upscale` | Integer | ❌ Нет | Масштаб улучшения GFPGAN: 1-4 (по умолчанию: `2`, рекомендуется 2-4) |
-| `face_strength` | Float | ❌ Нет | Интенсивность улучшения: 0.0-1.0 (по умолчанию: `1.0`, где 1.0 = полный эффект) |
-| `face_iterations` | Integer | ❌ Нет | Количество итераций улучшения: 1-3 (по умолчанию: `1`, больше = сильнее эффект) |
-| `alpha_erode` | Integer | ❌ Нет | Эрозия маски в пикселях: 0-10 (по умолчанию: `0`) |
+| `reference` | File | ❌ Нет | Референсное изображение для переноса цвета. Если не указано, используется `src/ref.png` по умолчанию |
+| `background` | File | ❌ Нет | Фоновое изображение (будет подложено под результат). Если не указано, используется `src/bg.jpg` по умолчанию (если файл существует) |
+| `face_enhance` | Boolean | ❌ Нет | Включить улучшение лица через GFPGAN (по умолчанию: `true`) |
+| `face_upscale` | Integer | ❌ Нет | Масштаб улучшения GFPGAN: 1-4 (по умолчанию: `4`, рекомендуется 2-4) |
+| `face_strength` | Float | ❌ Нет | Интенсивность улучшения: 0.0-1.0 (по умолчанию: `0.7`, где 1.0 = полный эффект) |
+| `face_iterations` | Integer | ❌ Нет | Количество итераций улучшения: 1-3 (по умолчанию: `2`, больше = сильнее эффект) |
+| `alpha_erode` | Integer | ❌ Нет | Эрозия маски в пикселях: 0-10 (по умолчанию: `10`) |
 | `alpha_dilate` | Integer | ❌ Нет | Дилятация маски в пикселях: 0-10 (по умолчанию: `0`) |
-| `alpha_feather` | Integer | ❌ Нет | Размытие края маски в пикселях: 0-10 (по умолчанию: `0`) |
-| `bg_model` | String | ❌ Нет | Модель для удаления фона (по умолчанию: `isnet-general-use`) |
+| `alpha_feather` | Integer | ❌ Нет | Размытие края маски в пикселях: 0-10 (по умолчанию: `10`) |
+| `keep_largest` | Boolean | ❌ Нет | Оставить только главного человека (убрать людей на фоне) (по умолчанию: `true`) |
+| `bg_model` | String | ❌ Нет | Модель для удаления фона (по умолчанию: `u2net_human_seg`) |
 
 **Ответ:**
 
 **Успешный ответ (200 OK):**
 - **Content-Type:** `image/png`
 - **Content-Disposition:** `attachment; filename=result.png`
+- **X-Processing-Time:** Время обработки в секундах (например: `12.34`)
 - **Тело:** Бинарные данные PNG изображения
+
+**Важно:**
+- Итоговое изображение всегда имеет размер **720x1280 пикселей**
+- Изображение вписывается в этот размер с сохранением пропорций (без растягивания)
+- Если исходное изображение меньше целевого размера, добавляется прозрачный фон
+- Изображение центрируется в итоговом размере
 
 **Ошибки:**
 
@@ -124,7 +154,15 @@ Content-Disposition: form-data; name="alpha_feather"
 
 ### cURL
 
-#### Базовый запрос
+#### Базовый запрос (используются файлы по умолчанию)
+```bash
+curl -X POST "http://localhost:8000/api/process" \
+  -F "portrait=@portrait.jpg" \
+  -o result.png
+```
+*Примечание: Если не указаны `reference` и `background`, используются `src/ref.png` и `src/bg.jpg` по умолчанию*
+
+#### С кастомным референсом
 ```bash
 curl -X POST "http://localhost:8000/api/process" \
   -F "portrait=@portrait.jpg" \
@@ -132,14 +170,17 @@ curl -X POST "http://localhost:8000/api/process" \
   -o result.png
 ```
 
-#### С улучшением лица и лучшей моделью
+#### С настройками по умолчанию (явно указаны)
 ```bash
 curl -X POST "http://localhost:8000/api/process" \
   -F "portrait=@portrait.jpg" \
-  -F "reference=@reference.png" \
   -F "face_enhance=true" \
-  -F "face_upscale=3" \
-  -F "bg_model=isnet-general-use" \
+  -F "face_upscale=4" \
+  -F "face_strength=0.7" \
+  -F "face_iterations=2" \
+  -F "alpha_erode=10" \
+  -F "alpha_feather=10" \
+  -F "bg_model=u2net_human_seg" \
   -o result.png
 ```
 
@@ -150,11 +191,14 @@ curl -X POST "http://localhost:8000/api/process" \
   -F "reference=@reference.png" \
   -F "background=@background.jpg" \
   -F "face_enhance=true" \
-  -F "face_upscale=3" \
-  -F "bg_model=isnet-general-use" \
-  -F "alpha_erode=2" \
-  -F "alpha_dilate=2" \
-  -F "alpha_feather=5" \
+  -F "face_upscale=4" \
+  -F "face_strength=0.7" \
+  -F "face_iterations=2" \
+  -F "alpha_erode=10" \
+  -F "alpha_dilate=0" \
+  -F "alpha_feather=10" \
+  -F "bg_model=u2net_human_seg" \
+  -F "keep_largest=true" \
   -o result.png
 ```
 
@@ -173,10 +217,14 @@ files = {
 
 data = {
     'face_enhance': True,
-    'face_upscale': 3,
-    'alpha_erode': 2,
-    'alpha_dilate': 2,
-    'alpha_feather': 5,
+    'face_upscale': 4,
+    'face_strength': 0.7,
+    'face_iterations': 2,
+    'alpha_erode': 10,
+    'alpha_dilate': 0,
+    'alpha_feather': 10,
+    'bg_model': 'u2net_human_seg',
+    'keep_largest': True,
 }
 
 response = requests.post(url, files=files, data=data)
@@ -206,7 +254,9 @@ async def process_image():
     
     data = {
         'face_enhance': True,
-        'face_upscale': 3,
+        'face_upscale': 4,
+        'face_strength': 0.7,
+        'face_iterations': 2,
     }
     
     async with httpx.AsyncClient(timeout=300.0) as client:
@@ -239,12 +289,16 @@ async function processImage() {
         formData.append('background', backgroundFile);
     }
     
-    // Добавляем параметры
+    // Добавляем параметры (значения по умолчанию)
     formData.append('face_enhance', true);
-    formData.append('face_upscale', 3);
-    formData.append('alpha_erode', 2);
-    formData.append('alpha_dilate', 2);
-    formData.append('alpha_feather', 5);
+    formData.append('face_upscale', 4);
+    formData.append('face_strength', 0.7);
+    formData.append('face_iterations', 2);
+    formData.append('alpha_erode', 10);
+    formData.append('alpha_dilate', 0);
+    formData.append('alpha_feather', 10);
+    formData.append('bg_model', 'u2net_human_seg');
+    formData.append('keep_largest', true);
     
     try {
         const response = await fetch('http://localhost:8000/api/process', {
@@ -287,10 +341,13 @@ async function processImage() {
     form.append('reference', fs.createReadStream('reference.png'));
     form.append('background', fs.createReadStream('background.jpg'));
     form.append('face_enhance', 'true');
-    form.append('face_upscale', '3');
-    form.append('alpha_erode', '2');
-    form.append('alpha_dilate', '2');
-    form.append('alpha_feather', '5');
+    form.append('face_upscale', '4');
+    form.append('face_strength', '0.7');
+    form.append('face_iterations', '2');
+    form.append('alpha_erode', '10');
+    form.append('alpha_dilate', '0');
+    form.append('alpha_feather', '10');
+    form.append('bg_model', 'u2net_human_seg');
     
     try {
         const response = await axios.post(
@@ -324,10 +381,13 @@ $data = [
     'reference' => new CURLFile('reference.png', 'image/png', 'reference.png'),
     'background' => new CURLFile('background.jpg', 'image/jpeg', 'background.jpg'),
     'face_enhance' => 'true',
-    'face_upscale' => '3',
-    'alpha_erode' => '2',
-    'alpha_dilate' => '2',
-    'alpha_feather' => '5',
+    'face_upscale' => '4',
+    'face_strength' => '0.7',
+    'face_iterations' => '2',
+    'alpha_erode' => '10',
+    'alpha_dilate' => '0',
+    'alpha_feather' => '10',
+    'bg_model' => 'u2net_human_seg',
 ];
 
 $ch = curl_init($url);
@@ -383,10 +443,13 @@ func processImage() error {
     
     // Добавляем параметры
     w.WriteField("face_enhance", "true")
-    w.WriteField("face_upscale", "3")
-    w.WriteField("alpha_erode", "2")
-    w.WriteField("alpha_dilate", "2")
-    w.WriteField("alpha_feather", "5")
+    w.WriteField("face_upscale", "4")
+    w.WriteField("face_strength", "0.7")
+    w.WriteField("face_iterations", "2")
+    w.WriteField("alpha_erode", "10")
+    w.WriteField("alpha_dilate", "0")
+    w.WriteField("alpha_feather", "10")
+    w.WriteField("bg_model", "u2net_human_seg")
     
     w.Close()
     
@@ -439,25 +502,25 @@ func main() {
 ### Параметры обработки
 
 **bg_model (модель удаления фона):**
-- `isnet-general-use` - **ISNet** (лучшая точность, рекомендуется для портретов) ⭐
-- `u2net_human_seg` - U2Net для людей (хорошо для портретов, быстрее ISNet)
+- `u2net_human_seg` - **U2Net для людей** (по умолчанию, хорошо для портретов, быстрее ISNet)
+- `isnet-general-use` - ISNet (лучшая точность, рекомендуется для портретов) ⭐
 - `u2net` - U2Net базовая (универсальная, быстрая)
 - `silueta` - Silueta (хорошая для общих случаев)
 - `u2netp` - U2Net Lite (самая быстрая, но менее точная)
 
 **face_upscale:**
 - `1` - минимальная обработка (быстро)
-- `2-3` - оптимальный баланс качества и скорости (рекомендуется)
-- `4` - максимальное качество (медленно)
+- `2-3` - оптимальный баланс качества и скорости
+- `4` - максимальное качество (медленно, по умолчанию)
 
 **face_strength (интенсивность улучшения):**
 - `0.0` - без улучшения (исходное изображение)
-- `0.3-0.7` - легкое улучшение (естественный вид)
-- `1.0` - полное улучшение (максимальный эффект, по умолчанию)
+- `0.3-0.7` - легкое улучшение (естественный вид, по умолчанию: `0.7`)
+- `1.0` - полное улучшение (максимальный эффект)
 
 **face_iterations (количество итераций):**
-- `1` - одно применение улучшения (быстро, по умолчанию)
-- `2` - двойное применение (более сильный эффект)
+- `1` - одно применение улучшения (быстро)
+- `2` - двойное применение (более сильный эффект, по умолчанию)
 - `3` - тройное применение (максимальный эффект, медленно)
 
 **alpha_erode / alpha_dilate / alpha_feather:**
@@ -465,6 +528,7 @@ func main() {
 - `1-3` - легкая обработка
 - `4-7` - средняя обработка
 - `8-10` - сильная обработка (может обрезать детали)
+- По умолчанию: `alpha_erode=10`, `alpha_dilate=0`, `alpha_feather=10`
 
 ---
 
@@ -493,6 +557,10 @@ FastAPI автоматически генерирует OpenAPI специфик
 
 1. Все изображения обрабатываются в памяти, временные файлы не сохраняются на диск
 2. Результат всегда возвращается в формате PNG с альфа-каналом
-3. Если указан `background`, он автоматически масштабируется под размер портрета
-4. GFPGAN требует значительных ресурсов - рекомендуется использовать на серверах с GPU для ускорения
+3. **Итоговое изображение всегда имеет размер 720x1280 пикселей** с сохранением пропорций исходного изображения
+4. Если указан `background`, он автоматически масштабируется под размер портрета
+5. Если `reference` не указан, используется `src/ref.png` по умолчанию (если файл существует)
+6. Если `background` не указан, используется `src/bg.jpg` по умолчанию (если файл существует)
+7. GFPGAN требует значительных ресурсов - рекомендуется использовать на серверах с GPU для ускорения
+8. Время обработки возвращается в заголовке ответа `X-Processing-Time`
 
