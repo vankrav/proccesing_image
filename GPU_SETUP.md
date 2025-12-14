@@ -159,3 +159,9 @@ python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); 
 
 Уменьшите размер обрабатываемых изображений или используйте CPU версию для небольших изображений.
 
+
+
+
+
+
+

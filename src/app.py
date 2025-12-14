@@ -1088,6 +1088,8 @@ async def save_config_endpoint(
     bg_model: str = Form("u2net_human_seg"),
 ):
     """Сохранить настройки в конфигурационный файл."""
+    from config_manager import CONFIG_FILE
+    
     # Собираем все параметры в словарь
     config = {
         "face_enhance": face_enhance,
@@ -1108,15 +1110,60 @@ async def save_config_endpoint(
         "bg_model": bg_model,
         "face_detect": True,  # Добавляем face_detect, если его нет
     }
+    
     try:
+        # Проверяем, существует ли директория и доступна ли для записи
+        config_dir = CONFIG_FILE.parent
+        if not config_dir.exists():
+            try:
+                config_dir.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                print(f"❌ Ошибка создания директории {config_dir}: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Не удалось создать директорию для конфига: {e}"
+                )
+        
+        # Проверяем права на запись
+        if CONFIG_FILE.exists():
+            if not os.access(CONFIG_FILE, os.W_OK):
+                print(f"❌ Нет прав на запись в файл {CONFIG_FILE}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Нет прав на запись в файл конфига. Проверьте права доступа к {CONFIG_FILE}"
+                )
+        else:
+            # Проверяем права на запись в директорию
+            if not os.access(config_dir, os.W_OK):
+                print(f"❌ Нет прав на запись в директорию {config_dir}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Нет прав на запись в директорию конфига. Проверьте права доступа к {config_dir}"
+                )
+        
         # Используем функцию из config_manager
         save_config_func(config)
-        from config_manager import CONFIG_FILE
+        print(f"✅ Конфиг успешно сохранен в {CONFIG_FILE.absolute()}")
         return JSONResponse(content={"status": "ok", "message": f"Настройки сохранены в {CONFIG_FILE.absolute()}"})
+    except HTTPException:
+        raise
     except IOError as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка сохранения конфига: {e}")
+        error_msg = str(e)
+        print(f"❌ Ошибка сохранения конфига: {error_msg}")
+        print(f"   Путь к конфигу: {CONFIG_FILE.absolute()}")
+        print(f"   Существует: {CONFIG_FILE.exists()}")
+        if CONFIG_FILE.exists():
+            print(f"   Права на чтение: {os.access(CONFIG_FILE, os.R_OK)}")
+            print(f"   Права на запись: {os.access(CONFIG_FILE, os.W_OK)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка сохранения конфига: {error_msg}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Неожиданная ошибка: {e}")
+        error_msg = str(e)
+        print(f"❌ Неожиданная ошибка при сохранении конфига: {error_msg}")
+        print(f"   Тип ошибки: {type(e).__name__}")
+        print(f"   Путь к конфигу: {CONFIG_FILE.absolute()}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Неожиданная ошибка: {error_msg}")
 
 
 if __name__ == "__main__":

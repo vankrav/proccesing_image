@@ -2,6 +2,8 @@
 Менеджер конфигурации для сохранения и загрузки настроек по умолчанию.
 """
 import json
+import tempfile
+import shutil
 from pathlib import Path
 from typing import Dict, Any
 
@@ -86,20 +88,54 @@ def save_config(config: Dict[str, Any]) -> None:
     
     # Сохраняем в файл
     try:
+        # Проверяем, что CONFIG_FILE не является директорией (может случиться при неправильном монтировании в Docker)
+        if CONFIG_FILE.exists() and CONFIG_FILE.is_dir():
+            raise IOError(
+                f"Ошибка: {CONFIG_FILE.absolute()} является директорией, а не файлом. "
+                "Возможно, файл config.json не существует на хосте перед монтированием в Docker."
+            )
+        
         # Убеждаемся, что директория существует
         CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
         
-        # Создаем временный файл для атомарной записи
-        temp_file = CONFIG_FILE.with_suffix('.json.tmp')
-        with open(temp_file, 'w', encoding='utf-8') as f:
-            json.dump(validated_config, f, indent=2, ensure_ascii=False)
+        # Используем системную временную директорию для создания временного файла
+        # Это важно при работе с Docker volumes, где создание файла в той же директории может не работать
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            encoding='utf-8',
+            suffix='.json',
+            delete=False,
+            dir=tempfile.gettempdir()
+        ) as temp_file:
+            json.dump(validated_config, temp_file, indent=2, ensure_ascii=False)
+            temp_path = temp_file.name
         
-        # Атомарно заменяем старый файл новым
-        temp_file.replace(CONFIG_FILE)
+        # Копируем временный файл в целевое местоположение
+        # Используем shutil.copy2 для сохранения метаданных
+        try:
+            shutil.copy2(temp_path, CONFIG_FILE)
+        except (IOError, PermissionError, OSError) as e:
+            # Если копирование не удалось, пытаемся записать напрямую
+            try:
+                with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(validated_config, f, indent=2, ensure_ascii=False)
+            except (IOError, PermissionError, OSError) as direct_error:
+                raise IOError(
+                    f"Ошибка сохранения конфига в {CONFIG_FILE.absolute()}: "
+                    f"копирование ({e}), прямая запись ({direct_error})"
+                )
+        finally:
+            # Удаляем временный файл
+            try:
+                Path(temp_path).unlink(missing_ok=True)
+            except Exception:
+                pass  # Игнорируем ошибки при удалении временного файла
         
         print(f"✅ Конфиг сохранен в {CONFIG_FILE.absolute()}")
-    except IOError as e:
-        raise IOError(f"Ошибка сохранения конфига в {CONFIG_FILE.absolute()}: {e}")
+    except IOError:
+        raise
+    except Exception as e:
+        raise IOError(f"Неожиданная ошибка сохранения конфига в {CONFIG_FILE.absolute()}: {e}")
 
 
 def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
